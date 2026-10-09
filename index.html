@@ -2,84 +2,51 @@
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>App Obras Elite</title>
 <style>
-body{font-family:system-ui;margin:0;background:#f3f4f6;color:#111827}header{background:#111827;color:#fff;padding:20px 30px}
-main{max-width:850px;margin:auto;padding:30px}.card{background:#fff;padding:30px;border-radius:24px;margin-bottom:16px}
-input,button{box-sizing:border-box;width:100%;padding:16px;margin-top:14px;border-radius:12px;font-size:18px}
-input{border:1px solid #aaa}button{border:0;background:#111827;color:#fff;font-weight:700}.secondary{background:#e5e7eb;color:#111827}
-.hidden{display:none}.status{white-space:pre-wrap;word-break:break-word;margin-top:14px}.err{color:#b91c1c}.ok{color:#047857}
-
-.toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between}.toolbar h2{margin:0}.toolbar button{width:auto;margin:0;padding:11px 14px}
-.summary{color:#64748b;margin:8px 0 18px}.tasklist{display:grid;gap:10px}.task{display:block;text-decoration:none;color:#111827;border:1px solid #e5e7eb;border-radius:16px;padding:16px;background:#fff}
-.task-title{font-weight:750;font-size:17px;line-height:1.3}.task-meta{font-size:13px;color:#64748b;margin-top:7px}
-.badge{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:700}.empty{padding:22px 0;color:#64748b;text-align:center}
-@media(min-width:700px){.tasklist{grid-template-columns:1fr 1fr}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#f3f5f7;color:#111827}
+header{background:#111827;color:white;padding:20px}header h1{margin:0;font-size:28px}header p{margin:5px 0 0;color:#cbd5e1}
+main{max-width:900px;margin:auto;padding:18px}.panel{background:white;border-radius:20px;padding:20px;margin-bottom:15px;box-shadow:0 2px 12px #0000000a}
+input,button{width:100%;padding:14px;border-radius:12px;font-size:16px;margin-top:10px}input{border:1px solid #cbd5e1}button{border:0;background:#111827;color:white;font-weight:700}
+.secondary{background:#e5e7eb;color:#111827}.hidden{display:none}.status{margin-top:12px;white-space:pre-wrap}.ok{color:#047857}.err{color:#b91c1c}
+.grid{display:grid;gap:12px}.obra{border:1px solid #e5e7eb;border-radius:16px;padding:17px;cursor:pointer;background:white}
+.obra h3{margin:0 0 7px;font-size:18px}.meta{font-size:13px;color:#64748b}.top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.top button{width:auto;margin:0;padding:10px 13px}.badge{background:#eef2ff;color:#3730a3;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:700}
+.list{margin-top:14px}.stage{margin:16px 0 8px;font-weight:800;color:#334155}.task{display:block;border:1px solid #e5e7eb;border-radius:13px;padding:13px;margin:8px 0;color:#111827;text-decoration:none}
+@media(min-width:700px){.grid{grid-template-columns:1fr 1fr}}
 </style></head><body>
-<header><h1>App Obras Elite</h1><p>Trello · Supabase · Gestión de obras</p></header><main>
-<section id="login" class="card"><h2>Acceso</h2>
-<input id="email" type="email" autocomplete="email" placeholder="Correo electrónico">
-<input id="password" type="password" autocomplete="current-password" placeholder="Contraseña">
-<button id="enter" type="button">Entrar</button><div id="loginMsg" class="status"></div></section>
-<section id="app" class="hidden"><div class="card"><div id="user"></div>
-<button id="refresh" type="button">Actualizar desde Trello</button><button id="logout" type="button" class="secondary">Cerrar sesión</button>
-<div id="sync" class="status"></div></div><div class="card"><div class="toolbar"><h2>Obra</h2><span id="count" class="badge">0 tareas</span></div>
-<div id="summary" class="summary">Cargando información…</div><div id="content" class="tasklist"></div></div></section>
-</main>
+<header><h1>App Obras Elite</h1><p>Gestión de obras · Trello</p></header>
+<main>
+<section id="login" class="panel"><h2>Acceso</h2><input id="email" type="email" placeholder="Correo"><input id="password" type="password" placeholder="Contraseña"><button id="enter">Entrar</button><div id="loginStatus" class="status"></div></section>
+<section id="app" class="hidden">
+<div class="panel"><div class="top"><div><strong id="user"></strong><div class="meta">Sincronizado con Trello</div></div><button id="refresh">Actualizar</button></div><div id="sync" class="status"></div></div>
+<div class="panel"><div class="top"><h2 id="title" style="margin:0">Obras</h2><span id="count" class="badge"></span></div><div id="backWrap" class="hidden"><button id="back" class="secondary">← Volver a obras</button></div><div id="content" class="grid"></div></div>
+<button id="logout" class="secondary">Cerrar sesión</button>
+</section></main>
 <script>
-const BUILD="DIAGNOSTICO-2026-10-09-02";
-const SB_URL="https://vyswxgbbqyffnduhhrvz.supabase.co";
-const SB_KEY="sb_publishable_nzhp4ZiQ5NltXfmuoBc-hg_v_OVHRYb";
-const FN=SB_URL+"/functions/v1/trello-obras";
-const $=id=>document.getElementById(id);
-function status(id,text,ok=false){const n=$(id);n.textContent=text;n.className="status "+(ok?"ok":"err");}
-async function api(path,options={}){
- const r=await fetch(SB_URL+path,{...options,headers:{apikey:SB_KEY,...(options.headers||{})}});
- const text=await r.text(); let data={}; try{data=text?JSON.parse(text):{}}catch{data={raw:text}}
- if(!r.ok) throw new Error(data.msg||data.message||data.error_description||data.error||("HTTP "+r.status));
- return data;
+const BASE='https://vyswxgbbqyffnduhhrvz.supabase.co', KEY='sb_publishable_nzhp4ZiQ5NltXfmuoBc-hg_v_OVHRYb', FN='https://vyswxgbbqyffnduhhrvz.supabase.co/functions/v1/trello-obras';
+const $=id=>document.getElementById(id); let session=JSON.parse(localStorage.getItem("elite_session")||"null"); let DATA=[];
+function esc(v){return String(v??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+async function login(){
+ $("loginStatus").textContent="Conectando…"; $("loginStatus").className="status";
+ try{let r=await fetch(BASE+"/auth/v1/token?grant_type=password",{method:"POST",headers:{apikey:KEY,"Content-Type":"application/json"},body:JSON.stringify({email:$("email").value.trim(),password:$("password").value})});
+ let d=await r.json(); if(!r.ok) throw new Error(d.error_description||d.msg||d.message||"Error de acceso"); session=d;localStorage.setItem("elite_session",JSON.stringify(d));showApp();await load();}
+ catch(e){$("loginStatus").textContent="Error de acceso: "+e.message;$("loginStatus").className="status err";}
 }
-function getSession(){try{return JSON.parse(localStorage.getItem("elite_session")||"null")}catch{return null}}
-function saveSession(s){localStorage.setItem("elite_session",JSON.stringify(s))}
-function clearSession(){localStorage.removeItem("elite_session")}
-function show(){
- const s=getSession(), logged=!!s?.access_token;
- $("login").classList.toggle("hidden",logged); $("app").classList.toggle("hidden",!logged);
- if(logged)$("user").textContent="Sesión: "+(s.user?.email||"usuario");
-}
-$("enter").addEventListener("click",async()=>{
- const email=$("email").value.trim(), password=$("password").value;
- if(!email||!password){status("loginMsg","Escribe correo y contraseña.");return}
- status("loginMsg","Conectando a "+SB_URL+" · "+BUILD,true); $("enter").disabled=true;
- try{
-  const data=await api("/auth/v1/token?grant_type=password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});
-  saveSession(data); status("loginMsg","Acceso correcto.",true); show(); await load();
- }catch(e){
-  let info="Error de acceso: "+e.message+" · "+BUILD;
-  if(e instanceof TypeError){
-    try {const test=await fetch(SB_URL+"/auth/v1/settings",{cache:"no-store"}); info+=" · Prueba conexión HTTP "+test.status;}
-    catch(t){info+=" · Prueba conexión: "+t.message;}
-    info+=" · Origen: "+location.origin;
-  }
-  status("loginMsg",info);
- }
- finally{$("enter").disabled=false}
-});
-$("logout").addEventListener("click",()=>{clearSession();show()});
-$("refresh").addEventListener("click",load);
 async function load(){
- const s=getSession(); if(!s?.access_token)return;
- status("sync","Actualizando desde Trello…",true);
- try{
-  const r=await fetch(FN,{headers:{Authorization:"Bearer "+s.access_token,apikey:SB_KEY}});
-  const text=await r.text(); if(!r.ok)throw new Error("HTTP "+r.status+": "+text);
-  let d;try{d=JSON.parse(text)}catch{d=text}
-  const cards=Array.isArray(d)?d:(Array.isArray(d?.cards)?d.cards:[]);
-  const active=cards.filter(c=>!c.closed);
-  $("count").textContent=active.length+" "+(active.length===1?"tarea":"tareas");
-  $("summary").textContent=active.length?"Pulsa una tarea para abrirla directamente en Trello.":"No hay tareas activas para mostrar.";
-  const esc=v=>String(v??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  $("content").innerHTML=active.length?active.map((c,i)=>`<a class="task" href="${esc(c.url||"#")}" target="_blank" rel="noopener"><div class="task-title">${esc(c.name||"Sin título")}</div><div class="task-meta">Tarea ${i+1} · Abrir en Trello ›</div></a>`).join(""):'<div class="empty">Sin tareas activas.</div>';
-  status("sync","Datos actualizados desde Trello.",true);
- }catch(e){status("sync","Login correcto. Error al leer Trello: "+e.message)}
+ $("sync").textContent="Actualizando…"; $("sync").className="status";
+ try{let r=await fetch(FN,{headers:{Authorization:"Bearer "+session.access_token,apikey:KEY}});let d=await r.json();if(!r.ok)throw new Error(d.error||"Error "+r.status);DATA=Array.isArray(d)?d:(d.boards||[]);renderBoards();$("sync").textContent="Datos actualizados desde Trello.";$("sync").className="status ok";}
+ catch(e){$("sync").textContent="Error al leer Trello: "+e.message;$("sync").className="status err";}
 }
-show();
+function renderBoards(){
+ $("title").textContent="Obras";$("backWrap").className="hidden";$("content").className="grid";$("count").textContent=DATA.length+" obras";
+ $("content").innerHTML=DATA.length?DATA.map((b,i)=>`<div class="obra" data-i="${i}"><h3>${esc(b.name)}</h3><div class="meta">${(b.lists||[]).length} etapas · ${(b.cards||[]).filter(c=>!c.closed).length} tareas</div></div>`).join(""):"No hay obras disponibles.";
+ document.querySelectorAll(".obra").forEach(x=>x.onclick=()=>renderBoard(DATA[+x.dataset.i]));
+}
+function renderBoard(b){
+ $("title").textContent=b.name;$("backWrap").className="";$("content").className="list";let cards=(b.cards||[]).filter(c=>!c.closed), lists=b.lists||[];$("count").textContent=cards.length+" tareas";
+ let h=""; for(const l of lists){let cs=cards.filter(c=>c.idList===l.id); if(!cs.length)continue; h+=`<div class="stage">${esc(l.name)}</div>`+cs.map(c=>`<a class="task" href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a>`).join("");}
+ $("content").innerHTML=h||"Sin tareas activas.";
+}
+function showApp(){$("login").className="hidden";$("app").className="";$("user").textContent=session?.user?.email||"Sesión iniciada"}
+$("enter").onclick=login;$("refresh").onclick=load;$("back").onclick=renderBoards;$("logout").onclick=()=>{localStorage.removeItem("elite_session");location.reload()};
+if(session?.access_token){showApp();load()}
 </script></body></html>
