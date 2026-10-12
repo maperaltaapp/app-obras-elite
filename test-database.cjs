@@ -1,0 +1,25 @@
+const {PGlite}=require('@electric-sql/pglite');
+const fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{
+ const db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
+ await db.exec(fs.readFileSync(__dirname+'/tasks-schema.sql','utf8'));await db.exec(fs.readFileSync(__dirname+'/native-schema.sql','utf8'));
+ const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222';
+ await db.query('insert into auth.users values($1,$2),($3,$4)',[a,'fixture-a@example.test',b,'fixture-b@example.test']);
+ const wa=(await db.query("insert into elite_works(user_id,name) values($1,'A') returning id",[a])).rows[0].id;const wb=(await db.query("insert into elite_works(user_id,name) values($1,'B') returning id",[b])).rows[0].id;
+ await db.exec(`set role authenticated;set request.jwt.claim.sub='${a}';`);
+ assert.equal((await db.query('select * from elite_works')).rows.length,1);
+ await assert.rejects(db.query("insert into elite_tasks(title,category,work_id) values('bad','work',$1)",[wb]),/foreign key/);
+ await assert.rejects(db.query("insert into elite_tasks(title,category,user_id) values('bad','work',$1)",[b]),/row-level security/);
+ await assert.rejects(db.query("select elite_push_config()"),/permission denied/);
+ await assert.rejects(db.query("insert into elite_history(user_id,entity_id,entity_type,action,title) values($1,$2,'test','test','test')",[a,wa]),/permission denied/);
+ const create=async(rule,date)=> (await db.query("insert into elite_tasks(title,category,work_id,due_at,recurrence,checklists) values('Recurring','work',$1,$2,$3,$4) returning *",[wa,date,rule,JSON.stringify([{id:'c',name:'Checklist',items:[{id:'i',text:'Measure',done:true}]}])])).rows[0];
+ let t=await create('weekly','2026-10-24T07:00:00Z');await assert.rejects(db.query('select elite_complete_task($1,$2)',[t.id,'2026-01-01T00:00Z']),/ha cambiado/);
+ let id=(await db.query('select elite_complete_task($1,$2) as id',[t.id,t.updated_at])).rows[0].id;
+ let next=(await db.query('select * from elite_tasks where id=$1',[id])).rows[0];assert.equal(new Date(next.due_at).toISOString(),'2026-10-31T08:00:00.000Z');assert.equal(next.completed,false);assert.equal(next.checklists[0].items[0].done,false);
+ await db.query('select elite_complete_task($1,$2)',[t.id,t.updated_at]);assert.equal((await db.query('select * from elite_tasks where previous_task_id=$1',[t.id])).rows.length,1);
+ let month=await create('monthly','2027-01-31T08:00Z');let mid=(await db.query('select elite_complete_task($1,$2) as id',[month.id,month.updated_at])).rows[0].id;assert.equal(new Date((await db.query('select due_at from elite_tasks where id=$1',[mid])).rows[0].due_at).toISOString(),'2027-02-28T08:00:00.000Z');
+ const hist=await db.query('select * from elite_history');assert(hist.rows.length>=4);
+ await db.exec(`set request.jwt.claim.sub='${b}';`);assert.equal((await db.query('select * from elite_tasks')).rows.length,0);assert.equal((await db.query('select * from elite_history where user_id=$1',[a])).rows.length,0);await assert.rejects(db.query('select elite_complete_task($1,$2)',[t.id,t.updated_at]),/no encontrada/);
+ await db.exec('reset role;set role anon;');await assert.rejects(db.query('select * from elite_tasks'),/permission denied/);await assert.rejects(db.query('select * from elite_works'),/permission denied/);
+ await db.close();console.log('PASS: SQL migration, RLS isolation, private RPC protection, cross-owner FK, no forged history, stale completion, idempotent recurrence, Madrid DST, month end, archived storage.');
+})().catch(e=>{console.error(e);process.exitCode=1});
