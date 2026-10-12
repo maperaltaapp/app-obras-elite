@@ -4,6 +4,7 @@ begin;
 create table if not exists elite_private.native_migration_backup (
  name text primary key, captured_at timestamptz not null default now(), rows jsonb not null
 );
+alter table elite_private.native_migration_backup enable row level security;
 revoke all on elite_private.native_migration_backup from public,anon,authenticated;
 insert into elite_private.native_migration_backup(name,rows)
  select 'tasks-before-native-2026-10-12',coalesce(jsonb_agg(to_jsonb(t)),'[]'::jsonb) from public.elite_tasks t
