@@ -46,7 +46,7 @@ begin
  select name into title from public.elite_works where id=target_work and user_id=owner_id and archived_at is null for update;
  if not found then raise exception 'Obra no encontrada'; end if;
  select * into old_plan from public.elite_work_plans where work_id=target_work for update;
- if coalesce(old_plan.revision,0)<>expected_revision then raise exception 'La planificación cambió. Actualiza antes de guardar.'; end if;
+ if expected_revision is null or coalesce(old_plan.revision,0)<>expected_revision then raise exception 'La planificación cambió. Actualiza antes de guardar.'; end if;
  if jsonb_typeof(new_phases) is distinct from 'array' or jsonb_array_length(new_phases)>100 or octet_length(new_phases::text)>250000 then raise exception 'Planificación no válida'; end if;
  if (select count(*) from jsonb_array_elements(new_phases))<>(select count(distinct value->>'id') from jsonb_array_elements(new_phases)) then raise exception 'Identificador de fase repetido'; end if;
  for p in select value from jsonb_array_elements(new_phases) loop
