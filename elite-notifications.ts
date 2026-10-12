@@ -5,7 +5,7 @@ const headers={'Access-Control-Allow-Origin':new URL(APP).origin,'Access-Control
 const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false,autoRefreshToken:false}});
 const reply=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers});
 function safeEndpoint(value:string){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&['fcm.googleapis.com','updates.push.services.mozilla.com','push.services.mozilla.com','web.push.apple.com','notify.windows.com'].some(h=>u.hostname===h||u.hostname.endsWith('.'+h))}catch{return false}}
-async function configuration(){let {data,error}=await db.rpc('elite_push_config');if(error)throw error;if(!data.public_key){const k=webpush.generateVAPIDKeys();const result=await db.rpc('elite_init_vapid',{pub:k.publicKey,priv:k.privateKey});if(result.error)throw result.error;data=result.data}return data}
+async function configuration(){let {data,error}=await db.rpc('elite_push_config');if(error)throw error;if(!data.public_key){const k=webpush.generateVAPIDKeys();const result=await db.rpc('elite_init_vapid',{pub:k.publicKey,priv:k.privateKey});if(result.error)throw result.error;data=result.data}if(!data.gateway_jwt){const token=Deno.env.get('SUPABASE_ANON_KEY')||'';if(!token.startsWith('eyJ'))throw new Error('Legacy gateway token unavailable');const result=await db.rpc('elite_set_gateway_jwt',{token});if(result.error)throw result.error;data=result.data}return data}
 function pushOptions(config:any){return {TTL:3600,timeout:10000,vapidDetails:{subject:APP,publicKey:config.public_key,privateKey:config.private_key}}}
 Deno.serve(async req=>{
  if(req.method==='OPTIONS')return new Response('ok',{headers});
@@ -17,8 +17,8 @@ Deno.serve(async req=>{
    const {data:jobs,error}=await db.rpc('elite_claim_reminders');if(error)throw error;let sent=0,failed=0;
    for(const j of jobs){try{
     if(!safeEndpoint(j.endpoint))throw new Error('Destino push no válido');
-    const {data:task,error:readError}=await db.from('elite_tasks').select('revision,completed,deleted_at').eq('id',j.task_id).single();if(readError)throw readError;
-    if(task.revision!==j.revision||task.completed||task.deleted_at){await db.from('elite_push_deliveries').update({status:'cancelled'}).eq('id',j.id);continue}
+    const {data:task,error:readError}=await db.from('elite_tasks').select('revision,completed,deleted_at,work_id').eq('id',j.task_id).single();if(readError)throw readError;
+    let archivedWork=false;if(task.work_id){const {data:work,error:workError}=await db.from('elite_works').select('archived_at').eq('id',task.work_id).single();if(workError)throw workError;archivedWork=!!work.archived_at}if(task.revision!==j.revision||task.completed||task.deleted_at||archivedWork){await db.from('elite_push_deliveries').update({status:'cancelled'}).eq('id',j.id);continue}
     await webpush.sendNotification({endpoint:j.endpoint,keys:{p256dh:j.p256dh,auth:j.auth}},JSON.stringify({title:'Recordatorio · Obras Elite',body:j.title,url:APP+'?task='+j.task_id,tag:'elite-'+j.id}),pushOptions(config));
     const {error:saveError}=await db.from('elite_push_deliveries').update({status:'sent',sent_at:new Date().toISOString(),last_error:null}).eq('id',j.id);if(saveError)throw saveError;sent++;
    }catch(e){failed++;const status=Number(e.statusCode||0);if(status===404||status===410){await db.from('elite_push_subscriptions').delete().eq('id',j.subscription_id)}else{await db.from('elite_push_deliveries').update({status:j.attempts>=4?'failed':'pending',last_error:status?'Push HTTP '+status:'Fallo de envío',lease_until:new Date(Date.now()+300000).toISOString()}).eq('id',j.id)}}
