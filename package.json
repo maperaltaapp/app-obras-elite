@@ -1,0 +1,1 @@
+{"name":"app-obras-elite","private":true,"version":"2.0.0","scripts":{"test":"TZ=Europe/Madrid node test-app.cjs && node test-database.cjs"},"devDependencies":{"@electric-sql/pglite":"0.5.9"}}
