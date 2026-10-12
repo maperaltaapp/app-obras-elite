@@ -1,0 +1,24 @@
+const {PGlite}=require('@electric-sql/pglite'),fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{
+ const db=new PGlite(),root=fs.existsSync(__dirname+'/tasks-schema.sql')?__dirname+'/':__dirname+'/../';
+ await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
+ for(const path of [root+'tasks-schema.sql',fs.existsSync(root+'native-schema.sql')?root+'native-schema.sql':root+'native-candidate/native-schema.sql',__dirname+'/planning-schema.sql'])await db.exec(fs.readFileSync(path,'utf8'));
+ const user='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
+ await db.query('insert into auth.users values($1,$2),($3,$4)',[user,'a@test.example',other,'b@test.example']);
+ const create=async name=>(await db.query('insert into elite_works(user_id,name) values($1,$2) returning id',[user,name])).rows[0].id;
+ const w1=await create('Prensas'),w2=await create('Lacado');
+ const contractor=(await db.query("insert into elite_contractors(user_id,name,kind,capacity) values($1,'Ferrallas','subcontractor',1) returning id",[user])).rows[0].id;
+ const phase=(id,start,end)=>({id,name:'Cimentación',start,end,weight:100,depends_on:[],observations:[],contractor_id:contractor,request_status:'pending'});
+ const p1=[phase('33333333-3333-4333-8333-333333333333','2026-11-10','2026-11-18')],p2=[phase('44444444-4444-4444-8444-444444444444','2026-11-15','2026-11-20')];
+ await db.exec(`set role authenticated;set request.jwt.claim.sub='${user}';`);
+ const save=async(w,phases,rev=0,freeze=false,reason='')=>(await db.query('select * from elite_save_plan($1,$2,$3,$4,true,$5)',[w,JSON.stringify(phases),rev,freeze,reason])).rows[0];
+ const one=await save(w1,p1,0,true);assert(one.baseline_at);assert(one.confirmed_at);
+ await assert.rejects(save(w2,p2),/CAPACITY_CONFLICT/);assert.equal((await db.query('select * from elite_work_plans')).rows.length,1);
+ const two=await save(w2,p2,0,true,'Autorizo refuerzo de equipo');assert.equal((await db.query('select * from elite_plan_exceptions')).rows.length,1);
+ const moved=structuredClone(p1);moved[0].end='2026-11-19';const updated=await save(w1,moved,one.revision,false,'Revisado');assert.equal(updated.baseline[0].end,'2026-11-18');
+ await assert.rejects(save(w1,p1,one.revision),/cambió/);
+ await assert.rejects(db.query("update elite_work_plans set baseline='[]'"),/permission denied/);
+ await db.exec('reset role;');await assert.rejects(db.query("update elite_work_plans set baseline='[]' where work_id=$1",[w1]),/original/);
+ await db.exec(`set role authenticated;set request.jwt.claim.sub='${other}';`);assert.equal((await db.query('select * from elite_work_plans')).rows.length,0);assert.equal((await db.query('select * from elite_contractors')).rows.length,0);await assert.rejects(save(w1,p1,updated.revision),/no encontrada/);
+ await db.close();console.log('PASS: owner isolation, atomic conflict rejection, reasoned exception audit, protected original baseline, stale edit guard and no direct plan mutation.');
+})().catch(e=>{console.error(e);process.exit(1)});
