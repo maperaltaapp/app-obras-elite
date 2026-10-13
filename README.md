@@ -1,37 +1,36 @@
-# App Obras Elite
+# Elite: planificación y subcontratas
 
-Gestión personal de obras, tareas y calendario. Esta rama prepara la gestión nativa en Supabase para dejar de consultar Trello, manteniendo el diseño compacto y la navegación Tareas · Calendario · Obras.
+Rama candidata, todavía sin publicar. Conserva Tareas · Calendario · Obras y los avisos móviles ya comprobados por el propietario con la app cerrada.
 
-## Estado de esta rama
+## Incluido
 
-**Candidata: no desplegar antes de aplicar y verificar la migración.** La producción continúa en `main`; respaldo previo: `backup/elite-2026-10-12`, commit `adacac472169e9383de588f74e97f4b59e87622d`.
+- Registro personal de subcontratas y proveedores, capacidad simultánea introducida por el usuario.
+- Fases principales por obra, dependencias explícitas fin-inicio en días naturales, fechas actuales y pesos físicos que suman 100 %.
+- Planificación original fijada por acción expresa y protegida también en PostgreSQL; nunca se sobrescribe con las fechas actuales.
+- Gantt con barra original clara, barra actual y línea HOY. Fin original frente a estimado y estado adelantado/en plazo/retrasado.
+- Avance físico real a partir de mediciones fechadas y pesos; sin mediciones se muestra desconocido. La curva prevista usa interpolación dentro de cada fase ponderada, y la real mantiene la última medición registrada. No hay valores reales futuros inventados.
+- Capacidad por obras distintas con las fechas actuales. Rechazo atómico en servidor y opción Habilitar igualmente con motivo y registro inmutable del conflicto.
+- Obra confirmada; borradores de solicitudes preparados a partir de datos guardados, con campos faltantes visibles. Estados pendiente/solicitado/confirmado y fecha de confirmación asignada por servidor.
+- Fechas actuales del Gantt sincronizadas con inicio/fin de la obra y el calendario.
 
-- Obras propias con inicio, fin, etapas, avance, archivo y enlace opcional a su chat de ChatGPT.
-- Tareas con notas, inicio/vencimiento, estados, prioridades, etiquetas, checklists editables y archivo recuperable.
-- Búsqueda por obra, texto y etiqueta; filtros por tipo, obra, prioridad y estado.
-- Repetición diaria, semanal o mensual: la siguiente tarea se genera al completar la anterior, con casillas reiniciadas. Se conserva la hora de Madrid, incluido el cambio estacional; fin de mes se ajusta al último día válido.
-- Historial de cambios desde la entrada en Elite. No se copia el registro histórico completo de actividad de Trello.
-- Calendario compacto, títulos resumidos, desplegables, festivos ya existentes y hitos rojos conservados.
-- Fechas y avance antiguos guardados solo en el móvil: botón «Recuperar fechas de este dispositivo» en cada obra importada. Solo rellena campos vacíos, no elimina el original local.
-- Notificaciones explícitamente pendientes. No se cambia la verificación JWT de las funciones ni se promete entrega de avisos. Las tareas de ChatGPT siguen siendo independientes.
-- El enlace de chat abre ChatGPT; no implementa IA de pago, micrófono ni escritura automática desde conversaciones.
-- Sin adjuntos ni documentación empresarial pesada, funciones de equipos o permisos colaborativos.
+## Pendiente del alcance completo
 
-## Activación
+- Conexión real de ChatGPT/voz, Outlook con permiso exclusivamente de envío o alternativa WhatsApp. No se ha autorizado ni enviado ninguna comunicación externa. No hay una IA conectada en esta entrega.
+- Plantilla contractual real y datos contractuales confirmados. No generar condiciones, precios ni datos de empresa inventados.
+- Código/fuente de Alquileres LYMSA para integrarlo conservando su funcionamiento.
+- Informes PDF, generación periódica, análisis automático por IA y detección de tareas críticas.
+- Edición avanzada de varias dependencias, calendarios de trabajo y fechas reales de ejecución frente a estimaciones. El primer Gantt usa días naturales.
 
-1. Confirmar el respaldo de código y mantener los tableros originales en Trello.
-2. Ejecutar `native-schema.sql` **una vez** sobre el esquema existente de `tasks-schema.sql`. Es una transacción aditiva y captura las tareas existentes en una tabla privada antes de ampliar el esquema. No volver a ejecutar `tasks-schema.sql` en producción.
-3. Revisar y ejecutar la importación privada preparada fuera del repositorio. Antes del corte definitivo, comprobar cambios producidos en Trello desde la exportación. Nunca publicar datos reales en este repositorio público.
-4. Verificar recuentos y muestras, aislamiento con dos usuarios, creación/edición y archivo desde la app autenticada, y visualización en móvil.
-5. Solo entonces integrar esta rama en `main` y verificar GitHub Pages.
+## Publicación
 
-El rollback del frontend consiste en restaurar el `index.html` del respaldo. No borra ni revierte las nuevas tablas ni los datos; antes de volver atrás después de uso real, conservar también las tareas nuevas y sus cambios.
+1. Conservar respaldo del main funcional.
+2. Probar planning-schema.sql en el proyecto real, dentro de su transacción aditiva. No ejecutar otra vez las migraciones anteriores.
+3. Verificar navegador autenticado, representación visual y guardado con datos de prueba identificados; las pruebas de CPU/PostgreSQL embebido no sustituyen esta comprobación.
+4. Publicar solamente después de esa verificación.
 
 ## Pruebas
 
-Con Node.js: `npm install` y `npm test`.
+node test-planning.cjs
+NODE_PATH=<dependencias> node test-planning-database.cjs
 
-- `test-app.cjs`: vistas nativas, filtros, edición de checklist, calendario compacto, validación de fechas, conflictos de edición y fallos de carga sin consultar Trello.
-- `test-database.cjs`: PostgreSQL embebido (PGlite), migración, aislamiento RLS, claves foráneas entre propietarios, historial protegido, repetición sin duplicados, cambio horario y final de mes.
-
-La importación privada también se probó dos veces en una base aislada sin duplicar datos. Estas pruebas no sustituyen la comprobación final del proyecto real y del navegador autenticado.
+Las pruebas verifican dependencias, cuatro días inclusivos de solapamiento, varias fases en una misma obra sin ocupar slots adicionales, aislamiento entre usuarios, rechazo de conflictos, auditoría de excepciones, original inmutable y ediciones obsoletas.
