@@ -38,11 +38,12 @@ let completionCalls=0;ctx.completionCheckbox={checked:true,disabled:false};ctx.f
 run('OWN_TASKS=fixtures');ctx.completionCheckbox={checked:true,disabled:false};ctx.fetch=async()=>({ok:false,status:500,text:async()=>JSON.stringify({message:'Error de prueba'})});await run("toggleTaskComplete('t1',completionCheckbox)");assert.equal(ctx.completionCheckbox.checked,false);assert.equal(ctx.completionCheckbox.disabled,false);
 console.log('PASS: direct completion, monthly exclusion, visible forms, hidden data preservation, dated counts, drag markup, failure rollback; native views, archived isolation, labels/priority filters, calendar overflow, safe chat links, full titles, checklist editing, timezone and date validation, stale edit detection, no Trello requests, API failure handling.');
 })().catch(e=>{console.error(e);process.exitCode=1});
-// Compact search can open, filter, and clear without leaving a hidden query.
+// Compact controls: direct accesses and add task before dated filter.
 run("mode='tasks';taskQuery='';taskPriority='all';taskState='all';taskWork='all';taskSource='all';tasks('dated')");
-let searchHidden=true;el('taskSearchPanel').classList={contains(){return searchHidden},toggle(_,hidden){searchHidden=hidden}};
-ctx.searchButton={setAttribute(name,value){this[name]=value}};
-run('toggleTaskSearch(searchButton)');assert.equal(searchHidden,false);assert.equal(ctx.searchButton['aria-expanded'],'true');
+const toolbar=el('content').innerHTML;
+assert(!toolbar.includes('aria-label="Buscar tareas"'));
+assert(toolbar.indexOf('>+ Tarea</button>')<toolbar.indexOf('>Con fecha</button>'));
+for(const label of ['Subcontratas','Gantts','Seguimiento'])assert(toolbar.includes('>'+label+'</button>'));
+assert(toolbar.indexOf('<summary>Filtros')<toolbar.indexOf('id="taskSearch"'));
 run("taskQuery='material';renderTaskResults()");assert(!el('taskResults').innerHTML.includes("openTaskForm('t2')"));
-run('toggleTaskSearch(searchButton)');assert.equal(searchHidden,true);assert.equal(run('taskQuery'),'');assert(el('taskResults').innerHTML.includes("openTaskForm('t2')"));
-console.log('PASS: search expansion, query filtering and closing clears the hidden query.');
+console.log('PASS: new shortcut row; add button before dated filter; search retained inside filters.');
