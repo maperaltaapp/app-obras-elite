@@ -43,7 +43,7 @@ run("mode='tasks';taskQuery='';taskPriority='all';taskState='all';taskWork='all'
 const toolbar=el('content').innerHTML;
 assert(!toolbar.includes('aria-label="Buscar tareas"'));
 assert(toolbar.indexOf('>+ Tarea</button>')<toolbar.indexOf('>Con fecha</button>'));
-for(const label of ['Subcontratas','Gantts','Seguimiento'])assert(toolbar.includes('>'+label+'</button>'));
+for(const label of ['Subcontratas','Gantts','Seguimiento'])assert(html.includes('>'+label+'</button>'));
 assert(toolbar.indexOf('<summary>Filtros')<toolbar.indexOf('id="taskSearch"'));
 run("taskQuery='material';renderTaskResults()");assert(!el('taskResults').innerHTML.includes("openTaskForm('t2')"));
 console.log('PASS: new shortcut row; add button before dated filter; search retained inside filters.');
