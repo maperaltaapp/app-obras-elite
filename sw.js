@@ -2,7 +2,7 @@ self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{}}catch{}
- event.waitUntil(self.registration.showNotification(data.title||'Obras Elite',{body:data.body||'Tienes una tarea pendiente.',tag:data.tag||'elite-reminder',icon:'./icon-192.png',data:{url:data.url||self.registration.scope}}));
+ event.waitUntil(self.registration.showNotification((data.title||'TU CONTROLAS').replace('Obras Elite','TU CONTROLAS'),{body:data.body||'Tienes una tarea pendiente.',tag:data.tag||'elite-reminder',icon:'./icon-192.png',data:{url:data.url||self.registration.scope}}));
 });
 self.addEventListener('notificationclick',event=>{
  event.notification.close();let url=new URL(event.notification.data?.url||self.registration.scope,self.registration.scope);
