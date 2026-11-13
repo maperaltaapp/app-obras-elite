@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION elite_private.gantt_save_core(target_work uuid, new_p
  SECURITY DEFINER
  SET search_path TO ''
 AS $function$
-declare owner_id uuid:=auth.uid();old_plan public.elite_work_plans;result public.elite_work_plans;p jsonb;pre jsonb;normalized jsonb:='[]';conflicts jsonb;obs jsonb;weight numeric:=0;title text;cid uuid;
+declare owner_id uuid:=auth.uid();old_plan public.elite_work_plans;result public.elite_work_plans;p jsonb;pre jsonb;normalized jsonb:='[]';conflicts jsonb;obs jsonb;weight numeric:=0;title text;cid uuid;lvl integer;parent_id text;child_count integer;parent_row jsonb;min_child date;max_child date;
 begin
  if owner_id is null then raise exception 'Inicia sesión'; end if;
  perform pg_advisory_xact_lock(hashtextextended(owner_id::text,0));
@@ -18,10 +18,25 @@ begin
   if nullif(p->>'id','') is null or length(trim(coalesce(p->>'name','')))=0 or length(p->>'name')>160 or jsonb_typeof(p->'weight') is distinct from 'number' then raise exception 'Indica nombre y peso de cada fase'; end if;
   perform (p->>'id')::uuid;
   if (p->>'start') is null or (p->>'end') is null or (p->>'start') !~ '^\d{4}-\d{2}-\d{2}$' or (p->>'end') !~ '^\d{4}-\d{2}-\d{2}$' or (p->>'end')::date<(p->>'start')::date or (p->>'end')::date-(p->>'start')::date>3660 then raise exception 'Fechas de fase no válidas'; end if;
-  if ((p->>'weight')::numeric<0 or ((p->>'weight')::numeric=0 and coalesce((p->>'milestone')::boolean,false)=false)) or (p->>'weight')::numeric>100 then raise exception 'Peso de fase no válido'; end if;weight:=weight+(p->>'weight')::numeric;
+  lvl:=coalesce(nullif(p->>'level','')::integer,1);parent_id:=nullif(p->>'parent_id','');
+  if lvl not between 1 and 3 then raise exception 'Nivel de actividad no válido'; end if;
+  if parent_id is not null then
+   select value into parent_row from jsonb_array_elements(new_phases) where value->>'id'=parent_id;
+   if parent_row is null or coalesce(nullif(parent_row->>'level','')::integer,1)<>lvl-1 then raise exception 'El elemento superior debe pertenecer al nivel inmediatamente anterior'; end if;
+  end if;
+  select count(*) into child_count from jsonb_array_elements(new_phases) where value->>'parent_id'=p->>'id';
+  if child_count>0 then
+   if coalesce((p->>'is_group')::boolean,false)=false or (p->>'weight')::numeric<>0 or coalesce((p->>'milestone')::boolean,false) or nullif(p->>'task_id','') is not null or nullif(p->>'contractor_id','') is not null or jsonb_array_length(coalesce(p->'depends_on','[]'))>0 or jsonb_array_length(coalesce(p->'observations','[]'))>0 or jsonb_array_length(coalesce(p->'economic_observations','[]'))>0 or nullif(p->>'budget','') is not null then raise exception 'Una fase o tarea contenedora no puede tener peso, mediciones, vínculo ni dependencias'; end if;
+   select min((value->>'start')::date),max((value->>'end')::date) into min_child,max_child from jsonb_array_elements(new_phases) where value->>'parent_id'=p->>'id';
+   if (p->>'start')::date<>min_child or (p->>'end')::date<>max_child then raise exception 'Las fechas de los elementos contenedores deben coincidir con sus descendientes'; end if;
+  else
+   if coalesce((p->>'is_group')::boolean,false) then raise exception 'El elemento contenedor no tiene tareas'; end if;
+   if (p->>'weight')::numeric<0 or ((p->>'weight')::numeric=0 and coalesce((p->>'milestone')::boolean,false)=false) or (p->>'weight')::numeric>100 then raise exception 'Peso de actividad no válido'; end if;
+   weight:=weight+(p->>'weight')::numeric;
+  end if;
   if jsonb_typeof(coalesce(p->'depends_on','[]')) is distinct from 'array' then raise exception 'Dependencias no válidas'; end if;
   for pre in select value from jsonb_array_elements(coalesce(p->'depends_on','[]')) loop
-   if not exists(select 1 from jsonb_array_elements(new_phases) f where f->>'id'=pre#>>'{}' and (f->>'end')::date<(p->>'start')::date) then raise exception 'Dependencia ausente, cíclica o con fechas incompatibles'; end if;
+   if not exists(select 1 from jsonb_array_elements(new_phases) f where f->>'id'=pre#>>'{}' and (f->>'end')::date<(p->>'start')::date and not exists(select 1 from jsonb_array_elements(new_phases) child where child->>'parent_id'=f->>'id')) then raise exception 'Dependencia ausente, cíclica o con fechas incompatibles'; end if;
   end loop;
   cid:=nullif(p->>'contractor_id','')::uuid;
   if cid is not null and not exists(select 1 from public.elite_contractors where id=cid and user_id=owner_id and archived_at is null) then raise exception 'Subcontrata no encontrada'; end if;
@@ -73,27 +88,36 @@ alter table public.elite_plan_versions enable row level security;
 create policy elite_plan_versions_owner on public.elite_plan_versions for select to authenticated using(user_id=(select auth.uid()));
 revoke all on public.elite_plan_versions from public,anon,authenticated;
 grant select on public.elite_plan_versions to authenticated;
-create function elite_private.gantt_schedule(rows jsonb) returns jsonb language plpgsql set search_path='' as $$
-declare result jsonb:='[]';done text[]:='{}';p jsonb;q jsonb;deps jsonb;earliest date;duration integer;lag integer;changed boolean;
+
+create or replace function elite_private.gantt_schedule(rows jsonb) returns jsonb language plpgsql set search_path='' AS $schedule$
+declare result jsonb:='[]';ordered jsonb;done text[]:='{}';p jsonb;deps jsonb;earliest date;duration integer;lag integer;changed boolean;lvl integer;
 begin
  while cardinality(done)<jsonb_array_length(rows) loop
- changed:=false;
- for p in select value from jsonb_array_elements(rows) loop
- if p->>'id'=any(done) then continue;end if;
- deps:=coalesce(p->'depends_on','[]');
- if exists(select 1 from jsonb_array_elements_text(deps) d where not d=any(done)) then continue;end if;
- duration:=(p->>'end')::date-(p->>'start')::date;lag:=coalesce((p->>'lag_days')::integer,0);
- if jsonb_array_length(deps)>0 then
- select max((r->>'end')::date)+1+lag into earliest from jsonb_array_elements(result) r where r->>'id' in(select jsonb_array_elements_text(deps));
- p:=p||jsonb_build_object('start',earliest,'end',earliest+duration);
- end if;
- result:=result||jsonb_build_array(p);done:=array_append(done,p->>'id');changed:=true;
+  changed:=false;
+  for p in select value from jsonb_array_elements(rows) loop
+   if p->>'id'=any(done) then continue;end if;
+   deps:=coalesce(p->'depends_on','[]');
+   if exists(select 1 from jsonb_array_elements_text(deps) d where not d=any(done)) then continue;end if;
+   duration:=(p->>'end')::date-(p->>'start')::date;lag:=coalesce((p->>'lag_days')::integer,0);
+   if jsonb_array_length(deps)>0 then
+    select max((r->>'end')::date)+1+lag into earliest from jsonb_array_elements(result) r where r->>'id' in(select jsonb_array_elements_text(deps));
+    p:=p||jsonb_build_object('start',earliest,'end',earliest+duration);
+   end if;
+   result:=result||jsonb_build_array(p);done:=array_append(done,p->>'id');changed:=true;
+  end loop;
+  if not changed then raise exception 'Dependencia ausente o circular';end if;
  end loop;
- if not changed then raise exception 'Dependencia ausente o circular';end if;
+ select coalesce(jsonb_agg(r order by o.n),'[]') into ordered from jsonb_array_elements(rows) with ordinality o(p,n) join jsonb_array_elements(result) r on r->>'id'=o.p->>'id';
+ result:=ordered;
+ for lvl in reverse 3..1 loop
+  select coalesce(jsonb_agg(case when coalesce(nullif(row->>'level','')::integer,1)=lvl and exists(select 1 from jsonb_array_elements(result) child where child->>'parent_id'=row->>'id') then
+   row||jsonb_build_object('is_group',true,'weight',0,'milestone',false,'task_id',null,'contractor_id',null,'observations','[]'::jsonb,'economic_observations','[]'::jsonb,'budget',null,'actual_start',null,'actual_end',null,'depends_on','[]'::jsonb,'start',(select min((child->>'start')::date) from jsonb_array_elements(result) child where child->>'parent_id'=row->>'id'),'end',(select max((child->>'end')::date) from jsonb_array_elements(result) child where child->>'parent_id'=row->>'id'))
+   else row end order by ordinality),'[]') into result from jsonb_array_elements(result) with ordinality;
  end loop;
- return (select coalesce(jsonb_agg(r order by o.n),'[]') from jsonb_array_elements(rows) with ordinality o(p,n) join jsonb_array_elements(result) r on r->>'id'=o.p->>'id');
-end $$;
+ return result;
+end $schedule$;
 revoke all on function elite_private.gantt_schedule(jsonb) from public,anon,authenticated;
+
 create function public.elite_save_gantt(target_work uuid,new_phases jsonb,expected_revision integer,freeze_baseline boolean default false,confirm_work boolean default false,exception_reason text default '') returns public.elite_work_plans language plpgsql security definer set search_path='' as $$
 declare uid uuid:=auth.uid();old_plan public.elite_work_plans;result public.elite_work_plans;p jsonb;o jsonb;t public.elite_tasks;tid uuid;previous_flag text:=current_setting('elite.gantt_sync',true);normalized jsonb:='[]';
 begin

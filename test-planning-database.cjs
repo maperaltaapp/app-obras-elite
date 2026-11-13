@@ -2,18 +2,23 @@ const {PGlite}=require('@electric-sql/pglite'),fs=require('node:fs'),assert=requ
 (async()=>{
  const db=new PGlite(),root=fs.existsSync(__dirname+'/tasks-schema.sql')?__dirname+'/':__dirname+'/../';
  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key,email text);create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;`);
- for(const path of [root+'tasks-schema.sql',fs.existsSync(root+'native-schema.sql')?root+'native-schema.sql':root+'native-candidate/native-schema.sql',__dirname+'/planning-schema.sql'])await db.exec(fs.readFileSync(path,'utf8'));
+ for(const path of [root+'tasks-schema.sql',fs.existsSync(root+'native-schema.sql')?root+'native-schema.sql':root+'native-candidate/native-schema.sql',__dirname+'/planning-schema.sql',__dirname+'/gantt-v2-schema.sql',__dirname+'/gantt-task-progress.sql',__dirname+'/gantt-hierarchy-schema.sql'])await db.exec(fs.readFileSync(path,'utf8'));
  const user='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
  await db.query('insert into auth.users values($1,$2),($3,$4)',[user,'a@test.example',other,'b@test.example']);
  const create=async name=>(await db.query('insert into elite_works(user_id,name) values($1,$2) returning id',[user,name])).rows[0].id;
  const w1=await create('Prensas'),w2=await create('Lacado');
+ const w3=await create('Jerarquía');
  const contractor=(await db.query("insert into elite_contractors(user_id,name,kind,capacity) values($1,'Ferrallas','subcontractor',1) returning id",[user])).rows[0].id;
  const phase=(id,start,end)=>({id,name:'Cimentación',start,end,weight:100,depends_on:[],observations:[],contractor_id:contractor,request_status:'pending'});
  const p1=[phase('33333333-3333-4333-8333-333333333333','2026-11-10','2026-11-18')],p2=[phase('44444444-4444-4444-8444-444444444444','2026-11-15','2026-11-20')];
  await db.exec(`set role authenticated;set request.jwt.claim.sub='${user}';`);
- const save=async(w,phases,rev=0,freeze=false,reason='')=>(await db.query('select * from elite_save_plan($1,$2,$3,$4,true,$5)',[w,JSON.stringify(phases),rev,freeze,reason])).rows[0];
+ const save=async(w,phases,rev=0,freeze=false,reason='')=>(await db.query('select * from elite_save_gantt($1,$2,$3,$4,true,$5)',[w,JSON.stringify(phases),rev,freeze,reason])).rows[0];
  const one=await save(w1,p1,0,true);assert(one.baseline_at);assert(one.confirmed_at);
- await assert.rejects(save(w2,p2),/CAPACITY_CONFLICT/);assert.equal((await db.query('select * from elite_work_plans')).rows.length,1);
+ const parent='55555555-5555-4555-8555-555555555555',task='66666666-6666-4666-8666-666666666666';
+ const tree=[{id:parent,name:'Fase',level:1,is_group:true,start:'2026-11-10',end:'2026-11-18',weight:0,depends_on:[],observations:[],economic_observations:[],budget:null},{id:task,name:'Tarea',level:2,parent_id:parent,is_group:true,start:'2026-11-10',end:'2026-11-18',weight:0,depends_on:[],observations:[],economic_observations:[],budget:null},{id:'77777777-7777-4777-8777-777777777777',name:'Subtarea A',level:3,parent_id:task,start:'2026-11-10',end:'2026-11-13',weight:40,depends_on:[],observations:[]},{id:'88888888-8888-4888-8888-888888888888',name:'Subtarea B',level:3,parent_id:task,start:'2026-11-14',end:'2026-11-18',weight:60,depends_on:[],observations:[]}];
+ const treeSaved=await save(w3,tree);assert.equal(treeSaved.phases.length,4);assert.equal(treeSaved.phases.find(x=>x.id===parent).weight,0);
+ await assert.rejects(save(w3,tree.map(x=>x.id===parent?{...x,weight:10}:x),treeSaved.revision),/contenedora|sumar 100/);
+ await assert.rejects(save(w2,p2),/CAPACITY_CONFLICT/);assert.equal((await db.query('select * from elite_work_plans')).rows.length,2);
  const two=await save(w2,p2,0,true,'Autorizo refuerzo de equipo');assert.equal((await db.query('select * from elite_plan_exceptions')).rows.length,1);
  const moved=structuredClone(p1);moved[0].end='2026-11-19';const updated=await save(w1,moved,one.revision,false,'Revisado');assert.equal(updated.baseline[0].end,'2026-11-18');
  await assert.rejects(save(w1,p1,one.revision),/cambió/);

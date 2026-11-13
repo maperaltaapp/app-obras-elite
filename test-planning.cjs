@@ -11,4 +11,14 @@ const conflicts=p.capacity(plans,[{id:'x',name:'Ferrallas',capacity:1}]);assert.
 plans[1].archived=true;assert.equal(p.capacity(plans,[{id:'x',name:'Ferrallas',capacity:1}]).length,0);
 const curve=p.curve({phases:shifted,baseline:original},'2026-11-04');assert(curve.filter(x=>x.date>'2026-11-04').every(x=>x.actual===null));
 assert.equal(p.requests({confirmed_at:'now',phases:original},{name:'Prensas'},[],'2026-11-01')[0].missing.length,4);
-console.log('PASS: immutable input baseline, dependency propagation, weighted physical observations, cycle and date validation, four-day inclusive capacity conflict, distinct-work capacity, archived exclusions and no invented future progress.');
+global.ElitePlanning=p;require('./planning-hierarchy.js');const h=global.ElitePlanning;
+const hierarchy=h.derive([
+ {id:'F',name:'Fase',level:1,start:'2026-11-01',end:'2026-11-20',weight:0,depends_on:[],observations:[]},
+ {id:'T',name:'Tarea',level:2,parent_id:'F',start:'2026-11-02',end:'2026-11-19',weight:0,depends_on:[],observations:[]},
+ phase('S1','2026-11-02','2026-11-09',40,{level:3,parent_id:'T',observations:[{date:'2026-11-05',percent:50}]}),
+ phase('S2','2026-11-10','2026-11-19',60,{level:3,parent_id:'T',observations:[{date:'2026-11-05',percent:25}]})
+]);
+h.validate(hierarchy);assert.equal(hierarchy[0].start,'2026-11-02');assert.equal(hierarchy[0].end,'2026-11-19');assert.equal(hierarchy[0].weight,0);assert.equal(h.progress(hierarchy,'2026-11-05'),35);assert.equal(h.progress(hierarchy,'2026-11-05',false,'T'),35);
+assert.throws(()=>h.validate([phase('Root','2026-11-01','2026-11-20',100),phase('Orphan','2026-11-02','2026-11-03',0,{level:3,parent_id:'missing'})]),/nivel anterior/);
+assert.throws(()=>h.validate(hierarchy.map(x=>x.id==='F'?{...x,weight:10}:x)),/contenedora/);
+console.log('PASS: immutable baseline, dependency propagation, weighted observations, three-level hierarchy rollup, cycle/date validation, capacity conflicts and no invented future progress.');
