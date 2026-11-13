@@ -1,0 +1,31 @@
+function tcShortName(name){return String(name).split(/\s+/).filter(w=>!['de','del','la','las','el','los','con','y','en','para','a','al'].includes(w.toLocaleLowerCase('es'))).slice(0,2).join(' ')}
+// Move a complete subtree without changing dates, dependencies or parentage.
+function tcReorder(rows,id,targetId,after){
+ const item=rows.find(r=>r.id===id),target=rows.find(r=>r.id===targetId);
+ if(!item||!target||id===targetId)return rows;
+ const ids=root=>{const result=new Set([root]);let change=true;while(change){change=false;for(const r of rows)if(result.has(r.parent_id)&&!result.has(r.id)){result.add(r.id);change=true}}return result};
+ const moving=ids(id);if(moving.has(targetId))return rows;
+ // A nested row stays in its phase; roots may move across sections.
+ if((item.parent_id||null)!==(target.parent_id||null))return rows;
+ const rest=rows.filter(r=>!moving.has(r.id)),block=rows.filter(r=>moving.has(r.id)),targetTree=ids(targetId);
+ let at=rest.findIndex(r=>r.id===targetId);if(after)at=Math.max(...rest.map((r,i)=>targetTree.has(r.id)?i:-1))+1;
+ rest.splice(at,0,...block);return rest;
+}
+const tcSelectRow=selectHeldForDelete;
+selectHeldForDelete=function(host,kind,id){tcSelectRow(host,kind,id);document.querySelectorAll('.tc-edit-row').forEach(n=>n.remove());if(kind==='activity'&&host){const button=document.createElement('button');button.className='tc-edit-row';button.textContent='Editar';button.onclick=e=>{e.stopPropagation();editHeldField(host.querySelector('.g-name'),'activity',id)};host.querySelector('.g-row-controls')?.prepend(button)}};
+(()=>{
+ const root=document.getElementById('content');let drag=null,timer=null,raf=null,suppressUntil=0,pinch=null;
+ const clean=()=>{clearTimeout(timer);cancelAnimationFrame(raf);root.querySelectorAll('.tc-dragging,.tc-drop-before,.tc-drop-after').forEach(n=>n.classList.remove('tc-dragging','tc-drop-before','tc-drop-after'));drag=null};
+ const targetAt=()=>{if(!drag?.active)return;root.querySelectorAll('.tc-drop-before,.tc-drop-after').forEach(n=>n.classList.remove('tc-drop-before','tc-drop-after'));const source=gRows().find(r=>r.id===drag.id);const options=[...root.querySelectorAll('.g-grid-row')].filter(n=>{const r=gRows().find(r=>r.id===n.dataset.row);return r&&r.id!==drag.id&&(r.parent_id||null)===(source?.parent_id||null)});let best=options.reduce((a,n)=>!a||Math.abs(n.getBoundingClientRect().top-drag.y)<Math.abs(a.getBoundingClientRect().top-drag.y)?n:a,null);if(best){drag.target=best.dataset.row;drag.after=drag.y>best.getBoundingClientRect().top+best.offsetHeight/2;best.classList.add(drag.after?'tc-drop-after':'tc-drop-before')}};
+ const scroll=()=>{if(!drag?.active)return;if(drag.y<110)window.scrollBy(0,-14);else if(drag.y>innerHeight-100)window.scrollBy(0,14);targetAt();raf=requestAnimationFrame(scroll)};
+ root.addEventListener('pointerdown',e=>{const name=e.target.closest('.g-name');if(!name||e.button!==0||G2.busy||pinch)return;e.stopImmediatePropagation();clean();const row=name.closest('.g-grid-row');drag={id:row.dataset.row,row,x:e.clientX,y:e.clientY,startY:e.clientY,active:false,pointer:e.pointerId};timer=setTimeout(()=>{if(!drag)return;drag.active=true;selectHeldForDelete(row,'activity',drag.id);row.classList.add('tc-dragging');gConnect();name.setPointerCapture(e.pointerId);suppressUntil=Date.now()+1000;raf=requestAnimationFrame(scroll)},450)},true);
+ root.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.pointer)return;drag.y=e.clientY;if(!drag.active){if(Math.abs(e.clientY-drag.startY)>10)clean();return}e.preventDefault();e.stopImmediatePropagation();targetAt()},true);
+ root.addEventListener('pointerup',async e=>{if(!drag)return;const d=drag;if(d.active){e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+600}clean();if(d.active&&d.target&&Math.abs(d.y-d.startY)>10){const rows=gHydrate(gRows()),next=tcReorder(rows,d.id,d.target,d.after);if(next!==rows)await gCommit(next,{reschedule:false})}},true);
+ root.addEventListener('pointercancel',clean,true);
+ root.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation()}},true);
+ root.addEventListener('dblclick',e=>{const n=e.target.closest('.g-name');if(n)editHeldField(n,'activity',n.dataset.inlineEdit)});
+ root.addEventListener('touchstart',e=>{if(e.touches.length!==2)return;const host=e.target.closest('.g-board,.calendar-panel');if(!host)return;clean();pinch={gantt:host.matches('.g-board'),distance:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),host,zoom:host.matches('.g-board')?G2.zoom:calZoom,value:null};e.preventDefault()}, {passive:false});
+ root.addEventListener('touchmove',e=>{if(!pinch||e.touches.length!==2)return;e.preventDefault();const distance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);pinch.value=Math.max(pinch.gantt?.25:.5,Math.min(pinch.gantt?4:2,pinch.zoom*distance/Math.max(1,pinch.distance)));if(pinch.gantt){const sheet=pinch.host.querySelector('.g-sheet');sheet.style.transformOrigin='left top';sheet.style.transform='scaleX('+pinch.value/pinch.zoom+')'}else{pinch.host.style.setProperty('--cal-zoom',pinch.value)}},{passive:false});
+ const finishPinch=()=>{if(!pinch)return;const p=pinch;pinch=null;if(p.value!==null){localStorage.setItem(p.gantt?'tc_gantt_zoom':'tc_calendar_zoom',String(p.value));if(p.gantt){G2.zoom=p.value;gRender()}else{calZoom=p.value;calendar()}}};
+ root.addEventListener('touchend',e=>{if(e.touches.length<2)finishPinch()});root.addEventListener('touchcancel',finishPinch);
+})();

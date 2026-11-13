@@ -1,0 +1,17 @@
+/* Compact controls; primary actions retain accessible touch targets. */
+.tc-parts{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:18px}
+.tc-parts>.tc-part-create{order:1;width:auto;min-height:40px;font-size:14px!important;padding:9px 16px!important;border-radius:8px;margin:0 0 0 auto}
+.tc-parts-heading{order:0;flex:1;margin:0;gap:14px;flex-direction:row;align-items:center}
+.tc-parts-heading h2{font-size:18px;white-space:nowrap}
+.tc-parts-heading label{font-size:11px;min-width:0;max-width:280px;flex:1;color:#607287}
+.tc-parts-heading select{height:40px;margin:2px 0 0;padding:8px 30px 8px 10px;border:1px solid #dce4ed;border-radius:8px;background:#fff;font-size:13px;width:100%}
+.tc-parts>.status,.tc-parts>.tc-report-history{order:2;flex-basis:100%;width:100%;margin:0}
+#newOwn{min-height:44px;min-width:112px;font-size:15px;padding:10px 18px}
+.g-row-move{display:none}.g-grid-row{height:54px}.g-bar{top:14px;height:23px}.g-bar.milestone{top:17px}.g-original{top:40px}.g-actual{top:46px}
+.g-name{touch-action:none;user-select:none;cursor:grab;min-height:34px}.g-name b{font-size:12px}.g-name small{display:none}
+.g-row-controls{display:none}.is-delete-selected .g-row-controls{display:flex}.is-delete-selected.g-grid-row{height:80px}
+.g-grid-row.is-delete-selected,.g-grid-row.is-delete-selected .g-table{background:#fff0f0!important}
+.tc-drop-before{box-shadow:inset 0 3px #2267bd!important}.tc-drop-after{box-shadow:inset 0 -3px #2267bd!important}
+.tc-dragging{opacity:.65;cursor:grabbing!important}.g-board{touch-action:pan-x pan-y;max-height:none!important}.g-name:focus-visible{outline:2px solid #2267bd}
+@media(max-width:700px){.g-workbench{--table-width:126px;padding:4px}.g-desktop{display:block!important}.g-mobile-activities{display:none!important}.g-table{grid-template-columns:126px}.g-name b{font-size:11px}.g-bar-text{display:none}.g-tools input[type=range],.cal-zoom input[type=range]{display:none}.g-heading{gap:8px}.g-top-actions button{font-size:12px;padding:8px}.g-tabs{gap:14px}.g-tabs button{font-size:12px}.tc-parts{padding:12px;gap:10px}.tc-parts-heading{flex-basis:60%;flex-direction:column;align-items:stretch;gap:4px}.tc-parts-heading h2{font-size:16px}.tc-parts-heading label{max-width:none}.tc-part-create{align-self:flex-end}.g-tools{gap:5px}.g-grid-row{height:48px}}
+.tc-edit-row{min-width:36px;min-height:32px;font-size:12px;padding:5px 8px;background:#edf3fa;color:#21476f}
