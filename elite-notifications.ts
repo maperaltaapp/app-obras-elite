@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
-const APP='https://maperaltaapp.github.io/app-obras-elite/';
+const APP='https://maperaltaapp.github.io/tu-controlas-app/';
 const headers={'Access-Control-Allow-Origin':new URL(APP).origin,'Access-Control-Allow-Headers':'authorization, apikey, content-type, x-elite-cron','Access-Control-Allow-Methods':'GET, POST, OPTIONS','Content-Type':'application/json','Cache-Control':'no-store'};
 const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false,autoRefreshToken:false}});
 const reply=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers});
