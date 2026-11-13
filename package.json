@@ -1,1 +1,1 @@
-{"name":"app-obras-elite","private":true,"scripts":{"test":"node test-app.cjs && node test-database.cjs && node test-planning.cjs && node test-planning-database.cjs"},"devDependencies":{"@electric-sql/pglite":"0.5.9"}}
+{"name":"tu-controlas-app","private":true,"scripts":{"test":"node test-app.cjs && node test-database.cjs && node test-planning.cjs && node test-planning-database.cjs"},"devDependencies":{"@electric-sql/pglite":"0.5.9"}}
